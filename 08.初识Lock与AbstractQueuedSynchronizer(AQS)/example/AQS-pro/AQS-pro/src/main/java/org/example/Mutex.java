@@ -43,6 +43,11 @@ class Mutex implements Lock, java.io.Serializable {
             return true;
         }
 
+//        @Override
+//        protected int tryAcquireShared(int arg) {
+//            return super.tryAcquireShared(arg);
+//        }
+
         // Provides a Condition
         Condition newCondition() {
             return new ConditionObject();
@@ -60,11 +65,13 @@ class Mutex implements Lock, java.io.Serializable {
     private final Sync sync = new Sync();
     //使用同步器的模板方法实现自己的同步语义
     public void lock() {
-        sync.acquire(1);
+//        sync.acquire(1);
+        sync.acquireShared(1);
     }
 
     public boolean tryLock() {
-        return sync.tryAcquire(1);
+//        return sync.tryAcquire(1);
+        return sync.releaseShared(1);
     }
 
     public void unlock() {
