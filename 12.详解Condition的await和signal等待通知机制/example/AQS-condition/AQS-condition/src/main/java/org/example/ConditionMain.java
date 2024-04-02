@@ -1,8 +1,12 @@
-package org.example;/**
+package org.example;
+
+/**
+ * @author Mark
+ * @version 1.0
  * @project AQS-condition
  * @description 测试condition在lock中的作用
- * @author Mark
  * @date 2024/3/16 15:24:53
- * @version 1.0
- */public class ConditionMain {
+ */
+public class ConditionMain {
+
 }

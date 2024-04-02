@@ -3,12 +3,13 @@
 # 1.ConcurrentHashmap简介 #
 在使用HashMap时在多线程情况下扩容会出现CPU接近100%的情况，因为hashmap并不是线程安全的，通常我们可以使用在java体系中古老的hashtable类，该类基本上所有的方法都采用synchronized进行线程安全的控制，可想而知，在高并发的情况下，每次只有一个线程能够获取对象监视器锁，这样的并发性能的确不令人满意。另外一种方式通过Collections的`Map<K,V> synchronizedMap(Map<K,V> m)`将hashmap包装成一个线程安全的map。比如SynchronzedMap的put方法源码为：
 
-	public V put(K key, V value) {
-	    synchronized (mutex) {return m.put(key, value);}
-	}
+```java
+public V put(K key, V value) {
+    synchronized (mutex) {return m.put(key, value);}
+}
+```
 
 实际上SynchronizedMap实现依然是采用synchronized独占式锁进行线程安全的并发控制的。同样，这种方案的性能也是令人不太满意的。针对这种境况，Doug Lea大师不遗余力的为我们创造了一些线程安全的并发容器，让每一个java开发人员倍感幸福。相对于hashmap来说，ConcurrentHashMap就是线程安全的map，其中**利用了锁分段的思想提高了并发度**。
-
 
 ConcurrentHashMap在JDK1.6的版本网上资料很多，有兴趣的可以去看看。
 JDK 1.6版本关键要素：
@@ -16,7 +17,7 @@ JDK 1.6版本关键要素：
 1. segment继承了ReentrantLock充当锁的角色，为每一个segment提供了线程安全的保障；
 2. segment维护了哈希散列表的若干个桶，每个桶由HashEntry构成的链表。
 
-而到了JDK 1.8的ConcurrentHashMap就有了很大的变化，光是代码量就足足增加了很多。1.8版本舍弃了segment，并且大量使用了synchronized，以及CAS无锁操作以保证ConcurrentHashMap操作的线程安全性。至于为什么不用ReentrantLock而是Synchronzied呢？实际上，synchronzied做了很多的优化，包括偏向锁，轻量级锁，重量级锁，可以依次向上升级锁状态，但不能降级（关于synchronized可以[看这篇文章](https://juejin.im/post/5ae6dc04f265da0ba351d3ff)），因此，使用synchronized相较于ReentrantLock的性能会持平甚至在某些情况更优，具体的性能测试可以去网上查阅一些资料。另外，底层数据结构改变为采用数组+链表+红黑树的数据形式。
+而到了JDK 1.8的ConcurrentHashMap就有了很大的变化，光是代码量就足足增加了很多。1.8版本舍弃了segment，并且大量使用了synchronized，以及CAS无锁操作以保证ConcurrentHashMap操作的线程安全性。至于为什么不用ReentrantLock（Reentrant读法：美[rɪ'entrənt]）而是Synchronzied呢？实际上，synchronzied做了很多的优化，包括偏向锁，轻量级锁，重量级锁，可以依次向上升级锁状态，但不能降级（关于synchronized可以[看这篇文章](https://juejin.im/post/5ae6dc04f265da0ba351d3ff)），因此，使用synchronized相较于ReentrantLock的性能会持平甚至在某些情况更优，具体的性能测试可以去网上查阅一些资料。另外，底层数据结构改变为采用数组+链表+红黑树的数据形式。
 
 # 2.关键属性及类 #
 在了解ConcurrentHashMap的具体方法实现前，我们需要系统的来看一下几个关键的地方。
@@ -38,74 +39,84 @@ volatile int sizeCtl;
 当值为0时，即数组长度为默认初始值。
 
 4. **sun.misc.Unsafe U**
-在ConcurrentHashMapde的实现中可以看到大量的U.compareAndSwapXXXX的方法去修改ConcurrentHashMap的一些属性。这些方法实际上是利用了CAS算法保证了线程安全性，这是一种乐观策略，假设每一次操作都不会产生冲突，当且仅当冲突发生的时候再去尝试。而CAS操作依赖于现代处理器指令集，通过底层**CMPXCHG**指令实现。CAS(V,O,N)核心思想为：**若当前变量实际值V与期望的旧值O相同，则表明该变量没被其他线程进行修改，因此可以安全的将新值N赋值给变量；若当前变量实际值V与期望的旧值O不相同，则表明该变量已经被其他线程做了处理，此时将新值N赋给变量操作就是不安全的，在进行重试**。而在大量的同步组件和并发容器的实现中使用CAS是通过`sun.misc.Unsafe`类实现的，该类提供了一些可以直接操控内存和线程的底层操作，可以理解为java中的“指针”。该成员变量的获取是在静态代码块中：
+	在ConcurrentHashMap的实现中可以看到大量的U.compareAndSwapXXXX的方法去修改ConcurrentHashMap的一些属性。这些方法实际上是利用了CAS算法保证了线程安全性，这是一种乐观策略，假设每一次操作都不会产生冲突，当且仅当冲突发生的时候再去尝试。而CAS操作依赖于现代处理器指令集，通过底层**CMPXCHG**指令实现。CAS(V,O,N)核心思想为：**若当前变量实际值V与期望的旧值O相同，则表明该变量没被其他线程进行修改，因此可以安全的将新值N赋值给变量；若当前变量实际值V与期望的旧值O不相同，则表明该变量已经被其他线程做了处理，此时将新值N赋给变量操作就是不安全的，在进行重试**。而在大量的同步组件和并发容器的实现中使用CAS是通过`sun.misc.Unsafe`类实现的，该类提供了一些可以直接操控内存和线程的底层操作，可以理解为java中的“指针”。该成员变量的获取是在静态代码块中：
 
-		static {
-		    try {
-		        U = sun.misc.Unsafe.getUnsafe();
-				.......
-		    } catch (Exception e) {
-		        throw new Error(e);
-		    }
-		}
+	```java
+	static {
+	    try {
+	        U = sun.misc.Unsafe.getUnsafe();
+			.......
+	    } catch (Exception e) {
+	        throw new Error(e);
+	    }
+	}
+	```
 
 
 > **ConcurrentHashMap中关键内部类**
 
 1. **Node**
-Node类实现了Map.Entry接口，主要存放key-value对，并且具有next域
+	Node类实现了Map.Entry接口，主要存放key-value对，并且具有next域
 
-		static class Node<K,V> implements Map.Entry<K,V> {
-		        final int hash;
-		        final K key;
-		        volatile V val;
-		        volatile Node<K,V> next;
-				......
-		}
+	```java
+	static class Node<K,V> implements Map.Entry<K,V> {
+	        final int hash;
+	        final K key;
+	        volatile V val;
+	        volatile Node<K,V> next;
+			......
+	}
+	```
 
 另外可以看出很多属性都是用volatile进行修饰的，也就是为了保证内存可见性。
 
 2. **TreeNode**
-树节点，继承于承载数据的Node类。而红黑树的操作是针对TreeBin类的，从该类的注释也可以看出，也就是TreeBin会将TreeNode进行再一次封装
+  树节点，继承于承载数据的Node类。而红黑树的操作是针对TreeBin类的，从该类的注释也可以看出，也就是TreeBin会将TreeNode进行再一次封装
 
-		**
-		 * Nodes for use in TreeBins
-		 */
-		static final class TreeNode<K,V> extends Node<K,V> {
-		        TreeNode<K,V> parent;  // red-black tree links
-		        TreeNode<K,V> left;
-		        TreeNode<K,V> right;
-		        TreeNode<K,V> prev;    // needed to unlink next upon deletion
-		        boolean red;
-				......
-		}
+  ```java
+  **
+   * Nodes for use in TreeBins
+   */
+  static final class TreeNode<K,V> extends Node<K,V> {
+          TreeNode<K,V> parent;  // red-black tree links
+          TreeNode<K,V> left;
+          TreeNode<K,V> right;
+          TreeNode<K,V> prev;    // needed to unlink next upon deletion
+          boolean red;
+  		......
+  }
+  ```
 
 3. **TreeBin**
-这个类并不负责包装用户的key、value信息，而是包装的很多TreeNode节点。实际的ConcurrentHashMap“数组”中，存放的是TreeBin对象，而不是TreeNode对象。
+  这个类并不负责包装用户的key、value信息，而是包装的很多TreeNode节点。实际的ConcurrentHashMap“数组”中，存放的是TreeBin对象，而不是TreeNode对象。
 
-		static final class TreeBin<K,V> extends Node<K,V> {
-		        TreeNode<K,V> root;
-		        volatile TreeNode<K,V> first;
-		        volatile Thread waiter;
-		        volatile int lockState;
-		        // values for lockState
-		        static final int WRITER = 1; // set while holding write lock
-		        static final int WAITER = 2; // set when waiting for write lock
-		        static final int READER = 4; // increment value for setting read lock
-				......
-		}
+  ```java
+  static final class TreeBin<K,V> extends Node<K,V> {
+          TreeNode<K,V> root;
+          volatile TreeNode<K,V> first;
+          volatile Thread waiter;
+          volatile int lockState;
+          // values for lockState
+          static final int WRITER = 1; // set while holding write lock
+          static final int WAITER = 2; // set when waiting for write lock
+          static final int READER = 4; // increment value for setting read lock
+  		......
+  }
+  ```
 
 4. **ForwardingNode**
-在扩容时才会出现的特殊节点，其key,value,hash全部为null。并拥有nextTable指针引用新的table数组。
+	在扩容时才会出现的特殊节点，其key,value,hash全部为null。并拥有nextTable指针引用新的table数组。
 
-		static final class ForwardingNode<K,V> extends Node<K,V> {
-		    final Node<K,V>[] nextTable;
-		    ForwardingNode(Node<K,V>[] tab) {
-		        super(MOVED, null, null, null);
-		        this.nextTable = tab;
-		    }
-		   .....
-		}
+	```java
+	static final class ForwardingNode<K,V> extends Node<K,V> {
+	    final Node<K,V>[] nextTable;
+	    ForwardingNode(Node<K,V>[] tab) {
+	        super(MOVED, null, null, null);
+	        this.nextTable = tab;
+	    }
+	   .....
+	}
+	```
 
 
 > **CAS关键操作**
@@ -115,24 +126,28 @@ Node类实现了Map.Entry接口，主要存放key-value对，并且具有next域
 
 1. **tabAt**
 
-		static final <K,V> Node<K,V> tabAt(Node<K,V>[] tab, int i) {
-		    return (Node<K,V>)U.getObjectVolatile(tab, ((long)i << ASHIFT) + ABASE);
-		}
-该方法用来获取table数组中索引为i的Node元素。
+   ```java
+   static final <K,V> Node<K,V> tabAt(Node<K,V>[] tab, int i) {
+       return (Node<K,V>)U.getObjectVolatile(tab, ((long)i << ASHIFT) + ABASE);
+   }
+   ```
+   该方法用来获取table数组中索引为i的Node元素。
 
 2. **casTabAt**
 
-		static final <K,V> boolean casTabAt(Node<K,V>[] tab, int i,
-		                                    Node<K,V> c, Node<K,V> v) {
-		    return U.compareAndSwapObject(tab, ((long)i << ASHIFT) + ABASE, c, v);
-		}
+   ```java
+   static final <K,V> boolean casTabAt(Node<K,V>[] tab, int i,
+                                       Node<K,V> c, Node<K,V> v) {
+       return U.compareAndSwapObject(tab, ((long)i << ASHIFT) + ABASE, c, v);
+   }
+   ```
 
     利用CAS操作设置table数组中索引为i的元素
 
 3. **setTabAt**
 
 		static final <K,V> void setTabAt(Node<K,V>[] tab, int i, Node<K,V> v) {
-		    U.putObjectVolatile(tab, ((long)i << ASHIFT) + ABASE, v);
+		      U.putObjectVolatile(tab, ((long)i << ASHIFT) + ABASE, v);
 		}
 
     该方法用来设置table数组中索引为i的元素
@@ -143,30 +158,34 @@ Node类实现了Map.Entry接口，主要存放key-value对，并且具有next域
 ## 3.1 实例构造器方法 ##
 在使用ConcurrentHashMap第一件事自然而然就是new 出来一个ConcurrentHashMap对象，一共提供了如下几个构造器方法：
 
-	// 1. 构造一个空的map，即table数组还未初始化，初始化放在第一次插入数据时，默认大小为16
-	ConcurrentHashMap()
-	// 2. 给定map的大小
-	ConcurrentHashMap(int initialCapacity) 
-	// 3. 给定一个map
-	ConcurrentHashMap(Map<? extends K, ? extends V> m)
-	// 4. 给定map的大小以及加载因子
-	ConcurrentHashMap(int initialCapacity, float loadFactor)
-	// 5. 给定map大小，加载因子以及并发度（预计同时操作数据的线程）
-	ConcurrentHashMap(int initialCapacity,float loadFactor, int concurrencyLevel)
+```java
+// 1. 构造一个空的map，即table数组还未初始化，初始化放在第一次插入数据时，默认大小为16
+ConcurrentHashMap()
+// 2. 给定map的大小
+ConcurrentHashMap(int initialCapacity) 
+// 3. 给定一个map
+ConcurrentHashMap(Map<? extends K, ? extends V> m)
+// 4. 给定map的大小以及加载因子
+ConcurrentHashMap(int initialCapacity, float loadFactor)
+// 5. 给定map大小，加载因子以及并发度（预计同时操作数据的线程）
+ConcurrentHashMap(int initialCapacity,float loadFactor, int concurrencyLevel)
+```
 
 ConcurrentHashMap一共给我们提供了5中构造器方法，具体使用请看注释，我们来看看第2种构造器，传入指定大小时的情况，该构造器源码为：
 
-	public ConcurrentHashMap(int initialCapacity) {
-		//1. 小于0直接抛异常
-	    if (initialCapacity < 0)
-	        throw new IllegalArgumentException();
-		//2. 判断是否超过了允许的最大值，超过了话则取最大值，否则再对该值进一步处理
-	    int cap = ((initialCapacity >= (MAXIMUM_CAPACITY >>> 1)) ?
-	               MAXIMUM_CAPACITY :
-	               tableSizeFor(initialCapacity + (initialCapacity >>> 1) + 1));
-		//3. 赋值给sizeCtl
-	    this.sizeCtl = cap;
-	}
+```java
+public ConcurrentHashMap(int initialCapacity) {
+	//1. 小于0直接抛异常
+    if (initialCapacity < 0)
+        throw new IllegalArgumentException();
+	//2. 判断是否超过了允许的最大值，超过了话则取最大值，否则再对该值进一步处理
+    int cap = ((initialCapacity >= (MAXIMUM_CAPACITY >>> 1)) ?
+               MAXIMUM_CAPACITY :
+               tableSizeFor(initialCapacity + (initialCapacity >>> 1) + 1));
+	//3. 赋值给sizeCtl
+    this.sizeCtl = cap;
+}
+```
 
 这段代码的逻辑请看注释，很容易理解，如果小于0就直接抛出异常，如果指定值大于了所允许的最大值的话就取最大值，否则，在对指定值做进一步处理。最后将cap赋值给sizeCtl,关于sizeCtl的说明请看上面的说明，**当调用构造器方法之后，sizeCtl的大小应该就代表了ConcurrentHashMap的大小，即table数组长度**。tableSizeFor做了哪些事情了？源码为：
 
@@ -539,13 +558,13 @@ put方法的代码量有点长，我们按照上面的分解的步骤一步步�
 	                                hn = new Node<K,V>(ph, pk, pv, hn);
 	                        }
 	                       //在nextTable的i位置上插入一个链表
-                           setTabAt(nextTab, i, ln);
-                           //在nextTable的i+n的位置上插入另一个链表
-                           setTabAt(nextTab, i + n, hn);
-                           //在table的i位置上插入forwardNode节点  表示已经处理过该节点
-                           setTabAt(tab, i, fwd);
-                           //设置advance为true 返回到上面的while循环中 就可以执行i--操作
-                           advance = true;
+	                       setTabAt(nextTab, i, ln);
+	                       //在nextTable的i+n的位置上插入另一个链表
+	                       setTabAt(nextTab, i + n, hn);
+	                       //在table的i位置上插入forwardNode节点  表示已经处理过该节点
+	                       setTabAt(tab, i, fwd);
+	                       //设置advance为true 返回到上面的while循环中 就可以执行i--操作
+	                       advance = true;
 	                    }
 						//4.4 处理当前节点是TreeBin时的情况，操作和上面的类似
 	                    else if (f instanceof TreeBin) {
