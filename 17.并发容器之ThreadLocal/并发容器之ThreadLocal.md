@@ -1,5 +1,5 @@
 # 1. ThreadLocal的简介 #
-在多线程编程中通常解决线程安全的问题我们会利用synchronzed或者lock控制线程对临界区资源的同步顺序从而解决线程安全的问题，但是这种加锁的方式会让未获取到锁的线程进行阻塞等待，很显然这种方式的时间效率并不是很好。**线程安全问题的核心在于多个线程会对同一个临界区共享资源进行操作**，那么，如果每个线程都使用自己的“共享资源”，各自使用各自的，又互相不影响到彼此即让多个线程间达到隔离的状态，这样就不会出现线程安全的问题。事实上，这就是一种“**空间换时间**”的方案，每个线程都会都拥有自己的“共享资源”无疑内存会大很多，但是由于不需要同步也就减少了线程可能存在的阻塞等待的情况从而提高的时间效率。
+在多线程编程中通常解决线程安全的问题我们会利用synchronzed或者lock控制线程对临界区资源的同步顺序从而解决线程安全的问题，但是这种加锁的方式会让未获取到锁的线程进行阻塞等待，很显然这种方式的时间效率并不是很好。**线程安全问题的核心在于多. 个线程会对同一个临界区共享资源进行操作**，那么，如果每个线程都使用自己的“共享资源”，各自使用各自的，又互相不影响到彼此即让多个线程间达到隔离的状态，这样就不会出现线程安全的问题。事实上，这就是一种“**空间换时间**”的方案，每个线程都会都拥有自己的“共享资源”无疑内存会大很多，但是由于不需要同步也就减少了线程可能存在的阻塞等待的情况从而提高的时间效率。
 
 虽然ThreadLocal并不在java.util.concurrent包中而在java.lang包中，但我更倾向于把它当作是一种并发容器（虽然真正存放数据的是ThreadLoclMap）进行归类。从**ThreadLocal这个类名可以顾名思义的进行理解，表示线程的“本地变量”，即每个线程都拥有该变量副本，达到人手一份的效果，各用各的这样就可以避免共享资源的竞争**。
 
@@ -10,8 +10,8 @@
 > **void set(T value)**
 
 **set方法设置在当前线程中threadLocal变量的值**，该方法的源码为：
-
-	public void set(T value) {
+```java
+     public void set(T value) {
 		//1. 获取当前线程实例对象
 	    Thread t = Thread.currentThread();
 		//2. 通过当前线程实例获取到ThreadLocalMap对象
@@ -23,25 +23,27 @@
 			//4.map为null,则新建ThreadLocalMap并存入value
 	        createMap(t, value);
 	}
-
+```
 方法的逻辑很清晰，具体请看上面的注释。通过源码我们知道value是存放在了ThreadLocalMap里了，当前先把它理解为一个普普通通的map即可，也就是说，**数据value是真正的存放在了ThreadLocalMap这个容器中了，并且是以当前threadLocal实例为key**。先简单的看下ThreadLocalMap是什么，有个简单的认识就好，下面会具体说的。
 
 **首先ThreadLocalMap是怎样来的**？源码很清楚，是通过`getMap(t)`进行获取：
-
+```java
 	ThreadLocalMap getMap(Thread t) {
 	    return t.threadLocals;
 	}
-
+```
 该方法直接返回的就是当前线程对象t的一个成员变量threadLocals：
-
+```java
 	/* ThreadLocal values pertaining to this thread. This map is maintained
 	 * by the ThreadLocal class. */
 	ThreadLocal.ThreadLocalMap threadLocals = null;
+```
 也就是说**ThreadLocalMap的引用是作为Thread的一个成员变量，被Thread进行维护的**。回过头再来看看set方法，当map为Null的时候会通过`createMap(t，value)`方法：
-
+```java
 	void createMap(Thread t, T firstValue) {
 	    t.threadLocals = new ThreadLocalMap(this, firstValue);
 	}
+```
 该方法就是**new一个ThreadLocalMap实例对象，然后同样以当前threadLocal实例作为key,值为value存放到threadLocalMap中，然后将当前线程对象的threadLocals赋值为threadLocalMap**。
 
 现在来对set方法进行总结一下：
@@ -50,7 +52,7 @@
 > T get()
 
 **get方法是获取当前线程中threadLocal变量的值**，同样的还是来看看源码：
-
+```java
 	public T get() {
 		//1. 获取当前线程的实例对象
 	    Thread t = Thread.currentThread();
@@ -69,9 +71,9 @@
 		//5. 若map为null或者entry为null的话通过该方法初始化，并返回该方法返回的value
 	    return setInitialValue();
 	}
-
+```
 弄懂了set方法的逻辑，看get方法只需要带着逆向思维去看就好，如果是那样存的，反过来去拿就好。代码逻辑请看注释，另外，看下setInitialValue主要做了些什么事情？
-
+```java
 	private T setInitialValue() {
 	    T value = initialValue();
 	    Thread t = Thread.currentThread();
@@ -82,19 +84,19 @@
 	        createMap(t, value);
 	    return value;
 	}
-
+```
 这段方法的逻辑和set方法几乎一致，另外值得关注的是initialValue方法:
-
+```java
 	protected T initialValue() {
 	    return null;
 	}
-
+```
 这个**方法是protected修饰的也就是说继承ThreadLocal的子类可重写该方法，实现赋值为其他的初始值**。关于get方法来总结一下：
 
 **通过当前线程thread实例获取到它所维护的threadLocalMap，然后以当前threadLocal实例为key获取该map中的键值对（Entry），若Entry不为null则返回Entry的value。如果获取threadLocalMap为null或者Entry为null的话，就以当前threadLocal为Key，value为null存入map后，并返回null。**
 
 > void remove()
-
+```java
 	public void remove() {
 		//1. 获取当前线程的threadLocalMap
 		ThreadLocalMap m = getMap(Thread.currentThread());
@@ -102,22 +104,24 @@
 			//2. 从map中删除以当前threadLocal实例为key的键值对
 			m.remove(this);
 	}
-get,set方法实现了存数据和读数据，我们当然还得学会如何删数据**。删除数据当然是从map中删除数据，先获取与当前线程相关联的threadLocalMap然后从map中删除该threadLocal实例为key的键值对即可**。
+```
+get,set方法实现了存数据和读数据，我们当然还得学会如何删数据。**删除数据当然是从map中删除数据，先获取与当前线程相关联的threadLocalMap然后从map中删除该threadLocal实例为key的键值对即可**。
 # 3. ThreadLocalMap详解 #
 从上面的分析我们已经知道，数据其实都放在了threadLocalMap中，threadLocal的get，set和remove方法实际上具体是通过threadLocalMap的getEntry,set和remove方法实现的。如果想真正全方位的弄懂threadLocal，势必得在对threadLocalMap做一番理解。
 
 ## 3.1 Entry数据结构 ##
 
 ThreadLocalMap是threadLocal一个静态内部类，和大多数容器一样内部维护了一个数组，同样的threadLocalMap内部维护了一个Entry类型的table数组。
-
+```java
 	/**
 	 * The table, resized as necessary.
 	 * table.length MUST always be a power of two.
 	 */
 	private Entry[] table;
+```
 通过注释可以看出，table数组的长度为2的幂次方。接下来看下Entry是什么：
 
-
+```java
 	static class Entry extends WeakReference<ThreadLocal<?>> {
 	    /** The value associated with this ThreadLocal. */
 	    Object value;
@@ -127,8 +131,8 @@ ThreadLocalMap是threadLocal一个静态内部类，和大多数容器一样内�
 	        value = v;
 	    }
 	}
-
-Entry是一个以ThreadLocal为key,Object为value的键值对，另外需要注意的是这里的**threadLocal是弱引用，因为Entry继承了WeakReference，在Entry的构造方法中，调用了super(k)方法就会将threadLocal实例包装成一个WeakReferenece。**到这里我们可以用一个图（下图来自http://blog.xiaohansong.com/2016/08/06/ThreadLocal-memory-leak/）来理解下thread,threadLocal,threadLocalMap，Entry之间的关系：
+```
+Entry是一个以ThreadLocal为key,Object为value的键值对，另外需要注意的是这里的**threadLocal是弱引用，因为Entry继承了WeakReference，在Entry的构造方法中，调用了super(k)方法就会将threadLocal实例包装成一个WeakReferenece**。到这里我们可以用一个图（下图来自http://blog.xiaohansong.com/2016/08/06/ThreadLocal-memory-leak/）来理解下thread,threadLocal,threadLocalMap，Entry之间的关系：
 
 ![ThreadLocal各引用间的关系](http://upload-images.jianshu.io/upload_images/2615789-12aef2e6ff040cae.jpg?imageMogr2/auto-orient/strip%7CimageView2/2/w/610)
 
@@ -178,7 +182,7 @@ Entry是一个以ThreadLocal为key,Object为value的键值对，另外需要注�
 关于两种方式的比较，可以参考 [这篇文章](http://www.nowamagic.net/academy/detail/3008060)。**ThreadLocalMap 中使用开放地址法来处理散列冲突**，而 HashMap 中使用的分离链表法。之所以采用不同的方式主要是因为：在 ThreadLocalMap 中的散列值分散的十分均匀，很少会出现冲突。并且 ThreadLocalMap 经常需要清除无用的对象，使用纯数组更加方便。
 
 在了解这些相关知识后我们再回过头来看一下set方法。set方法的源码为：
-
+```java
 	private void set(ThreadLocal<?> key, Object value) {
 	
 	    // We don't use a fast path as with get() because it is at
@@ -195,6 +199,9 @@ Entry是一个以ThreadLocal为key,Object为value的键值对，另外需要注�
 	    for (Entry e = tab[i];
 	         e != null;
 	         e = tab[i = nextIndex(i, len)]) {
+           //这里nextIndex方法可以不断的将下一个index赋值给i，
+           //这样每次都是获取数组的下一个值，
+           //到末尾的时候，nextIndex返回的是0，再重数组的开头进行
 	        ThreadLocal<?> k = e.get();
 			//覆盖旧Entry
 	        if (k == key) {
@@ -216,12 +223,12 @@ Entry是一个以ThreadLocal为key,Object为value的键值对，另外需要注�
 	    if (!cleanSomeSlots(i, sz) && sz >= threshold)
 	        rehash();
 	}
-
+```
 
 set方法的关键部分**请看上面的注释**，主要有这样几点需要注意：
 
-1. threadLocal的hashcode?
-
+1. threadLocal的hashcode怎么来的？
+```java
 		private final int threadLocalHashCode = nextHashCode();
 		private static final int HASH_INCREMENT = 0x61c88647;
 		private static AtomicInteger nextHashCode =new AtomicInteger();
@@ -231,15 +238,17 @@ set方法的关键部分**请看上面的注释**，主要有这样几点需要�
 	    private static int nextHashCode() {
 	        return nextHashCode.getAndAdd(HASH_INCREMENT);
 	    }
-	从源码中我们可以清楚的看到threadLocal实例的hashCode是通过nextHashCode()方法实现的，该方法实际上总是用一个AtomicInteger加上0x61c88647来实现的。0x61c88647这个数是有特殊意义的，它能够保证hash表的每个散列桶能够均匀的分布，这是`Fibonacci Hashing`，关于更多介绍可以看[这篇文章的threadLocal散列值部分](https://www.cnblogs.com/zhangjk1993/archive/2017/03/29/6641745.html)。也正是能够均匀分布，所以threadLocal选择使用开放地址法来解决hash冲突的问题。
+```
 
-2. 怎样确定新值插入到哈希表中的位置？
-	
-	该操作源码为：`key.threadLocalHashCode & (len-1)`，同hashMap和ConcurrentHashMap等容器的方式一样，利用当前key(即threadLocal实例)的hashcode与哈希表大小相与，因为哈希表大小总是为2的幂次方，所以相与等同于一个取模的过程，这样就可以通过Key分配到具体的哈希桶中去。而至于为什么取模要通过位与运算的原因就是位运算的执行效率远远高于了取模运算。
+   从源码中我们可以清楚的看到threadLocal实例的hashCode是通过nextHashCode()方法实现的，该方法实际上总是用一个AtomicInteger加上**0x61c88647**来实现的。**0x61c88647**这个数是有特殊意义的，它能够保证hash表的每个散列桶能够均匀的分布，这是`Fibonacci Hashing`，关于更多介绍可以看[这篇文章的threadLocal散列值部分](https://www.cnblogs.com/zhangjk1993/archive/2017/03/29/6641745.html)。也正是能够均匀分布，所以threadLocal选择使用开放地址法来解决hash冲突的问题。
+
+2. 怎样确定新值插入到哈希表中的位置？	
+
+   该操作源码为：`key.threadLocalHashCode & (len-1)`，同hashMap和ConcurrentHashMap等容器的方式一样，利用当前key(即threadLocal实例)的hashcode与哈希表大小相与，因为哈希表大小总是为2的幂次方，所以相与等同于一个取模的过程，这样就可以通过Key分配到具体的哈希桶中去。而至于为什么取模要通过位与运算的原因就是位运算的执行效率远远高于了取模运算。
 
 3. 怎样解决hash冲突？
 
-	源码中通过`nextIndex(i, len)`方法解决hash冲突的问题，该方法为`((i + 1 < len) ? i + 1 : 0);`，也就是不断往后线性探测，当到哈希表末尾的时候再从0开始，成环形。
+   源码中通过`nextIndex(i, len)`方法解决hash冲突的问题，该方法为`((i + 1 < len) ? i + 1 : 0);`，也就是不断往后线性探测，当到哈希表末尾的时候再从0开始，成环形。
 
 4. 怎样解决“脏”Entry？
 
@@ -250,7 +259,7 @@ set方法的关键部分**请看上面的注释**，主要有这样几点需要�
 > threshold的确定
 	
 也几乎和大多数容器一样，threadLocalMap会有扩容机制，那么它的threshold又是怎样确定的了？
-		
+```java
 		private int threshold; // Default to 0
 		/**
          * The initial capacity -- MUST be a power of two.
@@ -271,7 +280,7 @@ set方法的关键部分**请看上面的注释**，主要有这样几点需要�
         private void setThreshold(int len) {
             threshold = len * 2 / 3;
         }
-
+```
 
 根据源码可知，在第一次为threadLocal进行赋值的时候会创建初始大小为16的threadLocalMap,并且通过setThreshold方法设置threshold，其值为当前哈希数组长度乘以（2/3），也就是说加载因子为2/3(**加载因子是衡量哈希表密集程度的一个参数，如果加载因子越大的话，说明哈希表被装载的越多，出现hash冲突的可能性越大，反之，则被装载的越少，出现hash冲突的可能性越小。同时如果过小，很显然内存使用率不高，该值取值应该考虑到内存使用率和hash冲突概率的一个平衡，如hashMap,concurrentHashMap的加载因子都为0.75**)。这里**threadLocalMap初始大小为16**，**加载因子为2/3**，所以哈希表可用大小为：16*2/3=10，即哈希表可用容量为10。
 
@@ -280,7 +289,7 @@ set方法的关键部分**请看上面的注释**，主要有这样几点需要�
 > 扩容resize
 
 从set方法中可以看出当hash表的size大于threshold的时候，会通过resize方法进行扩容。
-
+```java
 	/**
 	 * Double the capacity of the table.
 	 */
@@ -314,14 +323,14 @@ set方法的关键部分**请看上面的注释**，主要有这样几点需要�
 	    size = count;
 	    table = newTab;
 	}	
-
+```
 方法逻辑**请看注释**，新建一个大小为原来数组长度的两倍的数组，然后遍历旧数组中的entry并将其插入到新的hash数组中，主要注意的是，**在扩容的过程中针对脏entry的话会令value为null，以便能够被垃圾回收器能够回收，解决隐藏的内存泄漏的问题**。
 
 
 ## 3.3 getEntry方法 ##
 
 getEntry方法源码为：
-
+```java
 	private Entry getEntry(ThreadLocal<?> key) {
 		//1. 确定在散列数组中的位置
 	    int i = key.threadLocalHashCode & (table.length - 1);
@@ -334,9 +343,9 @@ getEntry方法源码为：
 			//4. 未查找到满足条件的entry，额外在做的处理
 	        return getEntryAfterMiss(key, i, e);
 	}
-
+```
 方法逻辑很简单，若能当前定位的entry的key和查找的key相同的话就直接返回这个entry，否则的话就是在set的时候存在hash冲突的情况，需要通过getEntryAfterMiss做进一步处理。getEntryAfterMiss方法为：
-
+```java
 	private Entry getEntryAfterMiss(ThreadLocal<?> key, int i, Entry e) {
 	    Entry[] tab = table;
 	    int len = tab.length;
@@ -356,12 +365,12 @@ getEntry方法源码为：
 	    }
 	    return null;
 	}
-
-这个方法同样很好理解，通过nextIndex往后环形查找，如果找到和查询的key相同的entry的话就直接返回，如果在查找过程中遇到脏entry的话使用expungeStaleEntry方法进行处理。到目前为止**，为了解决潜在的内存泄漏的问题，在set，resize,getEntry这些地方都会对这些脏entry进行处理，可见为了尽可能解决这个问题几乎无时无刻都在做出努力。**
+```
+这个方法同样很好理解，通过nextIndex往后环形查找，如果找到和查询的key相同的entry的话就直接返回，如果在查找过程中遇到脏entry的话使用expungeStaleEntry方法进行处理。到目前为止，**为了解决潜在的内存泄漏的问题，在set，resize,getEntry这些地方都会对这些脏entry进行处理，可见为了尽可能解决这个问题几乎无时无刻都在做出努力**。
 
 ## 3.4 remove ##
 
-
+```java
 	/**
 	 * Remove the entry for key.
 	 */
@@ -381,13 +390,14 @@ getEntry方法源码为：
 	        }
 	    }
 	}
+```
 
 该方法逻辑很简单，通过往后环形查找到与指定key相同的entry后，先通过clear方法将key置为null后，使其转换为一个脏entry，然后调用expungeStaleEntry方法将其value置为null，以便垃圾回收时能够清理，同时将table[i]置为null。
 
 # 4. ThreadLocal的使用场景 #
 
 **ThreadLocal 不是用来解决共享对象的多线程访问问题的**，数据实质上是放在每个thread实例引用的threadLocalMap,也就是说**每个不同的线程都拥有专属于自己的数据容器（threadLocalMap），彼此不影响**。因此threadLocal只适用于 **共享对象会造成线程安全** 的业务场景。比如**hibernate中通过threadLocal管理Session**就是一个典型的案例，不同的请求线程（用户）拥有自己的session,若将session共享出去被多线程访问，必然会带来线程安全问题。下面，我们自己来写一个例子，SimpleDateFormat.parse方法会有线程安全的问题，我们可以尝试使用threadLocal包装SimpleDateFormat，将该实例不被多线程共享即可。
-
+```java
 	public class ThreadLocalDemo {
 	    private static ThreadLocal<SimpleDateFormat> sdf = new ThreadLocal<>();
 	
@@ -420,7 +430,7 @@ getEntry方法源码为：
 	        }
 	    }
 	}
-
+```
 1. 如果当前线程不持有SimpleDateformat对象实例，那么就新建一个并把它设置到当前线程中，如果已经持有，就直接使用。另外，**从` if (sdf.get() == null){....}else{.....}`可以看出为每一个线程分配一个SimpleDateformat对象实例是从应用层面（业务代码逻辑）去保证的。**
 2. 在上面我们说过threadLocal有可能存在内存泄漏，在使用完之后，最好使用remove方法将这个变量移除，就像在使用数据库连接一样，及时关闭连接。
 

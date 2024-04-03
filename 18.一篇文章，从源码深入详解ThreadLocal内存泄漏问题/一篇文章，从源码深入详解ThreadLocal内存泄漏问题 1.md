@@ -14,11 +14,12 @@ threadLocal是为了解决**对象不能被多线程共享访问**的问题，�
 
 
 上图中，实线代表强引用，虚线代表的是弱引用，如果threadLocal外部强引用被置为null(threadLocalInstance=null)的话，threadLocal实例就没有一条引用链路可达，很显然在gc(垃圾回收)的时候势必会被回收，因此entry就存在key为null的情况，无法通过一个Key为null去访问到该entry的value。
+
 同时，就存在了这样一条引用链：threadRef->currentThread->threadLocalMap->entry->valueRef->valueMemory,导致在垃圾回收的时候进行可达性分析的时候,value可达从而不会被回收掉，但是该value永远不能被访问到，这样就存在了**内存泄漏**。当然，如果线程执行结束后，threadLocal，threadRef会断掉，因此threadLocal,threadLocalMap，entry都会被回收掉。可是，在实际使用中我们都是会用线程池去维护我们的线程，比如在Executors.newFixedThreadPool()时创建线程的时候，为了复用线程是不会结束的，所以threadLocal内存泄漏就值得我们关注。
 
 # 2. 已经做出了哪些改进？ #
 实际上，为了解决threadLocal潜在的内存泄漏的问题，Josh Bloch and Doug Lea大师已经做了一些改进。在threadLocal的set和get方法中都有相应的处理。下文为了叙述，针对key为null的entry，源码注释为stale entry，直译为不新鲜的entry，这里我就称之为“脏entry”。比如在ThreadLocalMap的set方法中：
-
+```java
 	private void set(ThreadLocal<?> key, Object value) {
 	
 	    // We don't use a fast path as with get() because it is at
@@ -40,6 +41,7 @@ threadLocal是为了解决**对象不能被多线程共享访问**的问题，�
                 return;
             }
 
+              //如果key是null的情况下，这里会将value制为null
             if (k == null) {
                 replaceStaleEntry(key, value, i);
                 return;
@@ -51,16 +53,16 @@ threadLocal是为了解决**对象不能被多线程共享访问**的问题，�
 	    if (!cleanSomeSlots(i, sz) && sz >= threshold)
 	        rehash();
 	}
-
+```
 在该方法中针对脏entry做了这样的处理：
 
-1. 如果当前table[i]！=null的话说明hash冲突就需要向后环形查找，若在查找过程中遇到脏entry就通过replaceStaleEntry进行处理；
+1. 如果当前table[i] != null的话说明hash冲突就需要向后环形查找，若在查找过程中遇到脏entry就通过replaceStaleEntry进行处理；
 2. 如果当前table[i]==null的话说明新的entry可以直接插入，但是插入后会调用cleanSomeSlots方法检测并清除脏entry
 
 ## 2.1 cleanSomeSlots ##
 
 该方法的源码为：
-
+```java
 	/* @param i a position known NOT to hold a stale entry. The
      * scan starts at the element after i.
      *
@@ -91,7 +93,7 @@ threadLocal是为了解决**对象不能被多线程共享访问**的问题，�
 	    } while ( (n >>>= 1) != 0);
 	    return removed;
 	}
-
+```
 
 
 **入参：**
@@ -116,8 +118,7 @@ threadLocal是为了解决**对象不能被多线程共享访问**的问题，�
 
 
 如果对输入参数能够理解的话，那么cleanSomeSlots方法搜索基本上清除了，但是全部搞定还需要掌握expungeStaleEntry方法，当在搜索过程中遇到了脏entry的话就会调用该方法去清理掉脏entry。源码为：
-
-
+```java
 	/**
 	 * Expunge a stale entry by rehashing any possibly colliding entries
 	 * lying between staleSlot and the next null slot.  This also expunges
@@ -168,7 +169,7 @@ threadLocal是为了解决**对象不能被多线程共享访问**的问题，�
 	    }
 	    return i;
 	}
-
+```
 该方法逻辑请看注释（第1,2,3步），主要做了这么几件事情：
 1. 清理当前脏entry，即将其value引用置为null，并且将table[staleSlot]也置为null。value置为null后该value域变为不可达，在下一次gc的时候就会被回收掉，同时table[staleSlot]为null后以便于存放新的entry;
 2. 从当前staleSlot位置向后环形（nextIndex）继续搜索，直到遇到哈希桶（tab[i]）为null的时候退出；
